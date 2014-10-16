@@ -23,9 +23,18 @@ Revision History
 //
 // EFI Specification Revision
 //
+#define EFI_SYSTEM_TABLE_SIGNATURE 0x5453595320494249
+#define EFI_2_31_SYSTEM_TABLE_REVISION ((2<<16) | (31))
+#define EFI_2_30_SYSTEM_TABLE_REVISION ((2<<16) | (30))
+#define EFI_2_20_SYSTEM_TABLE_REVISION ((2<<16) | (20))
+#define EFI_2_10_SYSTEM_TABLE_REVISION ((2<<16) | (10))
+#define EFI_2_00_SYSTEM_TABLE_REVISION ((2<<16) | (00))
+#define EFI_1_10_SYSTEM_TABLE_REVISION ((1<<16) | (10))
+#define EFI_1_02_SYSTEM_TABLE_REVISION ((1<<16) | (02))
+#define EFI_SYSTEM_TABLE_REVISION EFI_2_31_SYSTEM_TABLE_REVISION
+#define EFI_SPECIFICATION_VERSION EFI_SYSTEM_TABLE_REVISION
 
-#define EFI_SPECIFICATION_MAJOR_REVISION 1
-#define EFI_SPECIFICATION_MINOR_REVISION 02
+
 
 //
 // Declare forward referenced data structures
@@ -581,6 +590,105 @@ EFI_STATUS
     OUT UINT32                  *HighCount
     );
 
+typedef struct {
+  UINT64                            Length;
+  union {
+    EFI_PHYSICAL_ADDRESS  DataBlock;
+    EFI_PHYSICAL_ADDRESS  ContinuationPointer;
+  } Union;
+} EFI_CAPSULE_BLOCK_DESCRIPTOR;
+
+typedef struct {
+  EFI_GUID          CapsuleGuid;
+  UINT32            HeaderSize;
+  UINT32            Flags;
+  UINT32            CapsuleImageSize;
+} EFI_CAPSULE_HEADER;
+
+//
+// The EFI System Table entry must point to an array of capsules
+// that contain the same CapsuleGuid value. The array must be
+// prefixed by a UINT32 that represents the size of the array of capsules.
+//
+typedef struct {
+  UINT32   CapsuleArrayNumber;
+  VOID*    CapsulePtr[1];
+} EFI_CAPSULE_TABLE;
+
+#pragma pack(1)
+typedef struct {
+  UINT16 VariableTotalSize;
+  EFI_GUID CapsuleGuid;
+  EFI_TIME CapsuleProcessed;
+  EFI_STATUS CapsuleStatus;
+} EFI_CAPSULE_REPORT_TABLE;
+#pragma pack()
+
+#define CAPSULE_FLAGS_PERSIST_ACROSS_RESET          0x00010000
+#define CAPSULE_FLAGS_POPULATE_SYSTEM_TABLE         0x00020000
+#define CAPSULE_FLAGS_INITIATE_RESET                0x00040000
+
+
+/**
+  Passes capsules to the firmware with both virtual and physical mapping. Depending on the intended
+  consumption, the firmware may process the capsule immediately. If the payload should persist
+  across a system reset, the reset value returned from EFI_QueryCapsuleCapabilities must
+  be passed into ResetSystem() and will cause the capsule to be processed by the firmware as
+  part of the reset process.
+
+  @param  CapsuleHeaderArray    Virtual pointer to an array of virtual pointers to the capsules
+                                being passed into update capsule.
+  @param  CapsuleCount          Number of pointers to EFI_CAPSULE_HEADER in
+                                CaspuleHeaderArray.
+  @param  ScatterGatherList     Physical pointer to a set of
+                                EFI_CAPSULE_BLOCK_DESCRIPTOR that describes the
+                                location in physical memory of a set of capsules.
+
+  @retval EFI_SUCCESS           Valid capsule was passed. If
+                                CAPSULE_FLAGS_PERSIT_ACROSS_RESET is not set, the
+                                capsule has been successfully processed by the firmware.
+  @retval EFI_DEVICE_ERROR      The capsule update was started, but failed due to a device error.
+  @retval EFI_INVALID_PARAMETER CapsuleSize is NULL.
+  @retval EFI_UNSUPPORTED       The capsule type is not supported on this platform.
+  @retval EFI_OUT_OF_RESOURCES  There were insufficient resources to process the capsule.
+
+**/
+typedef
+EFI_STATUS
+(EFIAPI *EFI_UPDATE_CAPSULE)(
+  IN EFI_CAPSULE_HEADER     **CapsuleHeaderArray,
+  IN UINTN                  CapsuleCount,
+  IN EFI_PHYSICAL_ADDRESS   ScatterGatherList   OPTIONAL
+  );
+
+/**
+  Returns if the capsule can be supported via UpdateCapsule().
+
+  @param  CapsuleHeaderArray    Virtual pointer to an array of virtual pointers to the capsules
+                                being passed into update capsule.
+  @param  CapsuleCount          Number of pointers to EFI_CAPSULE_HEADER in
+                                CaspuleHeaderArray.
+  @param  MaxiumCapsuleSize     On output the maximum size that UpdateCapsule() can
+                                support as an argument to UpdateCapsule() via
+                                CapsuleHeaderArray and ScatterGatherList.
+  @param  ResetType             Returns the type of reset required for the capsule update.
+
+  @retval EFI_SUCCESS           Valid answer returned.
+  @retval EFI_UNSUPPORTED       The capsule type is not supported on this platform, and
+                                MaximumCapsuleSize and ResetType are undefined.
+  @retval EFI_INVALID_PARAMETER MaximumCapsuleSize is NULL.
+  @retval EFI_OUT_OF_RESOURCES  There were insufficient resources to process the query request.
+
+**/
+typedef
+EFI_STATUS
+(EFIAPI *EFI_QUERY_CAPSULE_CAPABILITIES)(
+  IN  EFI_CAPSULE_HEADER     **CapsuleHeaderArray,
+  IN  UINTN                  CapsuleCount,
+  OUT UINT64                 *MaximumCapsuleSize,
+  OUT EFI_RESET_TYPE         *ResetType
+  );
+
 //
 // Protocol handler functions
 //
@@ -665,6 +773,14 @@ EFI_STATUS
 //
 // Standard EFI table header
 //
+typedef
+EFI_STATUS
+(EFIAPI *EFI_QUERY_VARIABLE_INFO)(
+  IN  UINT32            Attributes,
+  OUT UINT64            *MaximumVariableStorageSize,
+  OUT UINT64            *RemainingVariableStorageSize,
+  OUT UINT64            *MaximumVariableSize
+  );
 
 typedef struct _EFI_TABLE_HEARDER {
     UINT64                      Signature;
@@ -679,8 +795,9 @@ typedef struct _EFI_TABLE_HEARDER {
 // EFI Runtime Serivces Table
 //
 
-#define EFI_RUNTIME_SERVICES_SIGNATURE  0x56524553544e5552
-#define EFI_RUNTIME_SERVICES_REVISION   (EFI_SPECIFICATION_MAJOR_REVISION<<16) | (EFI_SPECIFICATION_MINOR_REVISION)
+#define EFI_RUNTIME_SERVICES_SIGNATURE 0x56524553544e5552
+#define EFI_RUNTIME_SERVICES_REVISION EFI_SPECIFICATION_VERSION
+
 
 typedef struct  {
     EFI_TABLE_HEADER                Hdr;
@@ -715,6 +832,16 @@ typedef struct  {
 
     EFI_GET_NEXT_HIGH_MONO_COUNT    GetNextHighMonotonicCount;
     EFI_RESET_SYSTEM                ResetSystem;
+    //
+    // UEFI 2.0 Capsule Services
+    //
+    EFI_UPDATE_CAPSULE              UpdateCapsule;
+    EFI_QUERY_CAPSULE_CAPABILITIES  QueryCapsuleCapabilities;
+
+    //
+    // Miscellaneous UEFI 2.0 Service
+    //
+    EFI_QUERY_VARIABLE_INFO         QueryVariableInfo;
 
 } EFI_RUNTIME_SERVICES;
 
@@ -723,8 +850,9 @@ typedef struct  {
 // EFI Boot Services Table
 //
 
-#define EFI_BOOT_SERVICES_SIGNATURE     0x56524553544f4f42
-#define EFI_BOOT_SERVICES_REVISION      (EFI_SPECIFICATION_MAJOR_REVISION<<16) | (EFI_SPECIFICATION_MINOR_REVISION)
+
+#define EFI_BOOT_SERVICES_SIGNATURE 0x56524553544f4f42
+#define EFI_BOOT_SERVICES_REVISION EFI_SPECIFICATION_VERSION
 
 typedef struct _EFI_BOOT_SERVICES {
 
@@ -846,6 +974,8 @@ typedef struct _EFI_BOOT_SERVICES {
 #define SAL_SYSTEM_TABLE_GUID    \
     { 0xeb9d2d32, 0x2d88, 0x11d3, {0x9a, 0x16, 0x0, 0x90, 0x27, 0x3f, 0xc1, 0x4d} }
 
+#define EFI_CAPSULE_REPORT_GUID \
+    { 0x39b68c46, 0xf7fb, 0x441b, {0xb6, 0xec, 0x16, 0xb0, 0xf6, 0x98, 0x21, 0xf3} }
 
 typedef struct _EFI_CONFIGURATION_TABLE {
     EFI_GUID                VendorGuid;
@@ -856,12 +986,6 @@ typedef struct _EFI_CONFIGURATION_TABLE {
 //
 // EFI System Table
 //
-
-
-
-
-#define EFI_SYSTEM_TABLE_SIGNATURE      0x5453595320494249
-#define EFI_SYSTEM_TABLE_REVISION      (EFI_SPECIFICATION_MAJOR_REVISION<<16) | (EFI_SPECIFICATION_MINOR_REVISION)
 
 typedef struct _EFI_SYSTEM_TABLE {
     EFI_TABLE_HEADER                Hdr;
